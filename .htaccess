@@ -1,0 +1,21 @@
+# Redirection vers index.php pour toutes les requêtes
+RewriteEngine On
+
+# Rediriger toutes les requêtes vers index.php sauf les fichiers existants
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?page=404 [L,QSA]
+
+# Protéger l'accès direct aux fichiers PHP dans pages/
+RewriteCond %{THE_REQUEST} \s+pages/([^\s?]+)\.php [NC]
+RewriteRule ^pages/ - [F,L]
+
+# Protéger l'accès direct aux fichiers PHP dans subscription/ (sauf ceux autorisés)
+RewriteCond %{THE_REQUEST} \s+subscription/(login|register|logout|download_key|process_recharge)\.php [NC]
+RewriteRule ^subscription/ - [F,L]
+
+# Autoriser l'accès aux fichiers statiques
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+
