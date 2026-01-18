@@ -18,4 +18,9 @@ RewriteRule ^subscription/ - [F,L]
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]
 
-
+# Augmenter la limite d'upload (si Apache + mod_php)
+php_value upload_max_filesize 500M
+php_value post_max_size 600M
+php_value memory_limit 512M
+php_value max_execution_time 300
+php_value max_input_time 300

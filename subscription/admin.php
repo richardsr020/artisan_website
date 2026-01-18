@@ -7,11 +7,17 @@ if (!defined('ROUTED')) {
 
 require_once 'auth.php';
 
-// // Vérifier les privilèges admin
-// if (!is_admin()) {
-//     header('Location: ' . DASHBOARD_PAGE);
-//     exit;
-// }
+// Vérifier les privilèges admin
+if (!is_admin()) {
+    header('Location: ' . DASHBOARD_PAGE);
+    exit;
+}
+
+$legacy = isset($_GET['legacy']) && ($_GET['legacy'] === '1' || $_GET['legacy'] === 'true');
+if (!$legacy) {
+    header('Location: ' . subscription_url('admin_dashboard'));
+    exit;
+}
 
 $db = get_db_connection();
 
@@ -41,6 +47,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$subscription_end, $is_active, $user_id]);
             $message = "Abonnement mis à jour!";
             break;
+
+        case 'add_software_link':
+            $name = sanitize_input($_POST['software_name'] ?? '');
+            $version = sanitize_input($_POST['software_version'] ?? '');
+            $description = sanitize_input($_POST['software_description'] ?? '');
+            $download_url = trim($_POST['software_download_url'] ?? '');
+
+            if (empty($name)) {
+                $message = "Le nom du logiciel est requis.";
+                break;
+            }
+
+            if (empty($download_url) || !filter_var($download_url, FILTER_VALIDATE_URL)) {
+                $message = "Veuillez fournir une URL valide (ex: lien GitHub Release).";
+                break;
+            }
+
+            $uploaded_by = $_SESSION['user_id'] ?? null;
+            $file_name = basename(parse_url($download_url, PHP_URL_PATH) ?? '');
+            if (empty($file_name)) {
+                $file_name = 'download';
+            }
+
+            $stmt = $db->prepare("INSERT INTO software (name, version, description, file_name, file_path, download_url, file_size, uploaded_by_user_id, is_active) VALUES (?, ?, ?, ?, '', ?, NULL, ?, 1)");
+            $stmt->execute([$name, $version, $description, $file_name, $download_url, $uploaded_by]);
+
+            if (function_exists('log_activity')) {
+                log_activity($uploaded_by, 'add_software_link', 'Ajout lien logiciel: ' . $download_url);
+            }
+
+            $message = "Lien GitHub enregistré avec succès!";
+            break;
     }
 }
 
@@ -59,6 +97,10 @@ $global_stats_stmt = $db->query("
     WHERE status = 'completed'
 ");
 $global_stats = $global_stats_stmt->fetch(PDO::FETCH_ASSOC);
+
+// Récupérer les logiciels uploadés
+$software_stmt = $db->query("SELECT * FROM software ORDER BY created_at DESC");
+$software_list = $software_stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -134,21 +176,7 @@ $global_stats = $global_stats_stmt->fetch(PDO::FETCH_ASSOC);
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <div class="logo-header">
-                <img src="../images/icon.png" alt="Logo Artisan_ND" class="logo">
-                <h1>Administration</h1>
-            </div>
-            <nav>
-                <ul>
-                    <li><a href="<?php echo subscription_url('dashboard'); ?>">Tableau de bord</a></li>
-                    <li><a href="<?php echo subscription_url('admin'); ?>" class="active">Administration</a></li>
-                    <li><a href="<?php echo subscription_url('logout'); ?>">Déconnexion</a></li>
-                </ul>
-            </nav>
-        </div>
-    </header>
+
     
     <main>
         <div class="container">
@@ -188,6 +216,60 @@ $global_stats = $global_stats_stmt->fetch(PDO::FETCH_ASSOC);
                     <a href="#" class="btn" style="width: 100%; margin-bottom: 0.5rem; background: #27ae60; color: white;">Exporter les données</a>
                     <a href="#" class="btn" style="width: 100%; background: #f39c12; color: white;">Voir les logs système</a>
                 </div>
+            </div>
+            
+            <div class="admin-table" style="margin-bottom: 2rem;">
+                <h3>Gestion des versions (GitHub)</h3>
+                <form method="POST" action="" style="margin-bottom: 1.5rem;">
+                    <input type="hidden" name="action" value="add_software_link">
+
+                    <div class="form-group">
+                        <label for="software_name">Nom</label>
+                        <input type="text" id="software_name" name="software_name" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="software_version">Version</label>
+                        <input type="text" id="software_version" name="software_version" class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="software_description">Description</label>
+                        <input type="text" id="software_description" name="software_description" class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="software_download_url">Lien de téléchargement (GitHub)</label>
+                        <input type="url" id="software_download_url" name="software_download_url" class="form-control" placeholder="https://github.com/<org>/<repo>/releases/download/v1.0.0/Artisan_ND_1.0.0.zip" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-success">Enregistrer le lien</button>
+                </form>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nom</th>
+                            <th>Version</th>
+                            <th>Fichier</th>
+                            <th>Taille</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($software_list as $sw): ?>
+                            <tr>
+                                <td><?php echo $sw['id']; ?></td>
+                                <td><?php echo htmlspecialchars($sw['name']); ?></td>
+                                <td><?php echo htmlspecialchars($sw['version'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($sw['file_name']); ?></td>
+                                <td><?php echo number_format(($sw['file_size'] ?? 0) / 1024 / 1024, 2); ?> MB</td>
+                                <td><?php echo isset($sw['created_at']) ? date('d/m/Y H:i', strtotime($sw['created_at'])) : ''; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
             
             <div class="admin-table">

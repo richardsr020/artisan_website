@@ -1,6 +1,7 @@
 <?php
 // Configuration principale du site
 define('SITE_NAME', 'Artisan_ND');
+define('OWNER_NAME', 'Nest Softwar Corporation');
 define('SITE_TAGLINE', 'Système de numérotation de facturiers intelligent');
 define('VERSION', '1.0.0');
 define('COPYRIGHT_YEAR', date('Y'));

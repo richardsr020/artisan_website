@@ -77,47 +77,6 @@ $subscription_active = $subscription_status['active'];
             box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.1);
             background: #ffffff;
         }
-        textarea.form-control {
-            min-height: 150px;
-            font-family: monospace;
-            resize: vertical;
-        }
-        .file-upload-wrapper {
-            position: relative;
-            display: inline-block;
-            width: 100%;
-        }
-        .file-upload-label {
-            display: block;
-            padding: 0.9rem 1.2rem;
-            background: linear-gradient(135deg, rgba(139, 69, 19, 0.1) 0%, rgba(255, 140, 0, 0.05) 100%);
-            border: 2px dashed rgba(139, 69, 19, 0.3);
-            border-radius: 12px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .file-upload-label:hover {
-            background: linear-gradient(135deg, rgba(139, 69, 19, 0.15) 0%, rgba(255, 140, 0, 0.1) 100%);
-            border-color: #8B4513;
-        }
-        .file-upload-label.has-file {
-            background: linear-gradient(135deg, rgba(139, 69, 19, 0.2) 0%, rgba(255, 140, 0, 0.15) 100%);
-            border-color: #8B4513;
-        }
-        input[type="file"] {
-            position: absolute;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-        }
-        .file-name {
-            margin-top: 0.5rem;
-            color: #8B4513;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
         .btn-submit {
             width: 100%;
             padding: 1rem 2rem;
@@ -201,7 +160,7 @@ $subscription_active = $subscription_status['active'];
                     </div>
                 <?php endif; ?>
                 
-                <form id="rechargeForm" class="recharge-form" method="POST" action="process_recharge.php" enctype="multipart/form-data" <?php echo !$subscription_active ? 'onsubmit="event.preventDefault(); alert(\'Votre abonnement a expiré. Veuillez le renouveler pour continuer.\'); return false;"' : ''; ?>>
+                <form id="rechargeForm" class="recharge-form" method="POST" action="../index.php?page=process_recharge" <?php echo !$subscription_active ? 'onsubmit="event.preventDefault(); alert(\'Votre abonnement a expiré. Veuillez le renouveler pour continuer.\'); return false;"' : ''; ?>>
                     
                     <div class="form-group">
                         <label for="client_phone">Numéro de Téléphone *</label>
@@ -216,28 +175,24 @@ $subscription_active = $subscription_status['active'];
                     </div>
                     
                     <div class="form-group">
+                        <label for="client_id">Identifiant Client (ClientID) *</label>
+                        <input type="text" id="client_id" name="client_id" class="form-control" required 
+                               placeholder="Ex: CLIENT_12345_ABC">
+                        <div class="info-text">Identifiant unique du client (machine_id ou client_id)</div>
+                    </div>
+                    
+                    <div class="form-group">
                         <label for="quota_units">Nombre d'Unités de Quota *</label>
                         <input type="number" id="quota_units" name="quota_units" class="form-control" required 
                                min="1" placeholder="Ex: 100">
                         <div class="info-text">Nombre d'unités (pages) à recharger pour ce client</div>
+                        <div class="info-text">Prix unitaire: <?php echo number_format(RECHARGE_UNIT_PRICE, 2); ?>$ / unité</div>
                     </div>
                     
                     <div class="form-group">
                         <label for="amount">Montant ($) *</label>
                         <input type="number" id="amount" name="amount" class="form-control" required 
                                min="0" step="0.01" placeholder="Ex: 5000">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="public_key">Clé Publique du Client *</label>
-                        <div class="file-upload-wrapper">
-                            <label for="public_key" class="file-upload-label" id="fileUploadLabel">
-                                <span>📁 Cliquez pour sélectionner le fichier de clé publique (.txt)</span>
-                            </label>
-                            <input type="file" id="public_key" name="public_key" accept=".txt" required>
-                            <div class="file-name" id="fileName" style="display: none;"></div>
-                        </div>
-                        <div class="info-text">Fichier contenant la clé publique PEM du client</div>
                     </div>
                     
                     <button type="submit" class="btn-submit" id="submitBtn" <?php echo !$subscription_active ? 'disabled' : ''; ?>>
@@ -249,22 +204,6 @@ $subscription_active = $subscription_status['active'];
     </main>
     
     <script>
-        // Gestion de l'affichage du nom de fichier
-        document.getElementById('public_key').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            const fileNameDiv = document.getElementById('fileName');
-            const fileUploadLabel = document.getElementById('fileUploadLabel');
-            
-            if (file) {
-                fileNameDiv.textContent = '✓ ' + file.name;
-                fileNameDiv.style.display = 'block';
-                fileUploadLabel.classList.add('has-file');
-            } else {
-                fileNameDiv.style.display = 'none';
-                fileUploadLabel.classList.remove('has-file');
-            }
-        });
-        
         // Gestion de la soumission du formulaire
         document.getElementById('rechargeForm').addEventListener('submit', function(e) {
             const submitBtn = document.getElementById('submitBtn');

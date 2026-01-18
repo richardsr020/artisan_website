@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db = get_db_connection();
             
             // Rechercher l'utilisateur
-            $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND is_active = 1");
+            $stmt = $db->prepare("SELECT * FROM users WHERE username = ?");
             $stmt->execute([$username]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
@@ -56,6 +56,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Journaliser la connexion réussie
                 log_activity($user['id'], 'login', "Connexion réussie");
+
+                if (isset($user['is_active']) && (int)$user['is_active'] !== 1) {
+                    header('Location: ' . subscription_url('suspended'));
+                    exit;
+                }
                 
                 // Rediriger vers le dashboard ou l'URL sauvegardée
                 $redirect_url = isset($_SESSION['redirect_after_login']) && !empty($_SESSION['redirect_after_login']) 

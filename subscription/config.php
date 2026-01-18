@@ -47,6 +47,22 @@ if (!defined('LOGOUT_PAGE')) {
     define('LOGOUT_PAGE', '../index.php?page=logout');
 }
 
+if (!defined('RECHARGE_UNIT_PRICE')) {
+    define('RECHARGE_UNIT_PRICE', 0.01);
+}
+
+if (!function_exists('str_ends_with')) {
+    function str_ends_with($haystack, $needle) {
+        $needle = (string)$needle;
+        if ($needle == '') {
+            return true;
+        }
+        $haystack = (string)$haystack;
+        $len = strlen($needle);
+        return substr($haystack, -$len) === $needle;
+    }
+}
+
 /**
  * Génère une URL pour une page du système d'abonnement
  * @param string $page Nom de la page
@@ -61,6 +77,61 @@ function subscription_url($page, $params = []) {
         }
     }
     return $url;
+}
+
+function ensure_database_initialized(PDO $db) {
+    $db->exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, email TEXT UNIQUE NOT NULL, company_name TEXT, phone TEXT, subscription_type TEXT DEFAULT 'basic', subscription_start DATE, subscription_end DATE, is_active BOOLEAN DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+ 
+    $db->exec("CREATE TABLE IF NOT EXISTS recharges (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, client_phone TEXT NOT NULL, client_email TEXT NOT NULL, quota_units INTEGER NOT NULL, amount DECIMAL(10, 2) NOT NULL, encrypted_file_path TEXT, transaction_id TEXT UNIQUE, status TEXT DEFAULT 'pending', error_message TEXT, recharge_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, completed_date TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))");
+ 
+    $db->exec("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, amount DECIMAL(10, 2) NOT NULL, payment_method TEXT, transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'completed', FOREIGN KEY (user_id) REFERENCES users(id))");
+ 
+    $db->exec("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, details TEXT, ip_address TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS software (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, version TEXT, description TEXT, file_name TEXT NOT NULL, file_path TEXT NOT NULL, download_url TEXT, file_size INTEGER, uploaded_by_user_id INTEGER, is_active BOOLEAN DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id))");
+
+    $stmt = $db->query("PRAGMA table_info(recharges)");
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $column_names = array_column($columns, 'name');
+ 
+    $alterations = [];
+    if (!in_array('encrypted_file_path', $column_names, true)) {
+        $alterations[] = "ALTER TABLE recharges ADD COLUMN encrypted_file_path TEXT";
+    }
+    if (!in_array('error_message', $column_names, true)) {
+        $alterations[] = "ALTER TABLE recharges ADD COLUMN error_message TEXT";
+    }
+    if (!in_array('completed_date', $column_names, true)) {
+        $alterations[] = "ALTER TABLE recharges ADD COLUMN completed_date TIMESTAMP";
+    }
+ 
+    foreach ($alterations as $sql) {
+        try {
+            $db->exec($sql);
+        } catch (PDOException $e) {
+            error_log("Erreur migration DB: " . $e->getMessage());
+        }
+    }
+
+    // Migration table software: ajouter download_url si manquante
+    try {
+        $stmt = $db->query("PRAGMA table_info(software)");
+        $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $column_names = array_column($columns, 'name');
+        if (!in_array('download_url', $column_names, true)) {
+            $db->exec("ALTER TABLE software ADD COLUMN download_url TEXT");
+        }
+    } catch (PDOException $e) {
+        error_log("Erreur migration software: " . $e->getMessage());
+    }
+
+    $admin_check = $db->prepare("SELECT COUNT(*) FROM users WHERE username = 'admin'");
+    $admin_check->execute();
+    if ((int)$admin_check->fetchColumn() === 0) {
+        $admin_password_hash = password_hash('admin123', PASSWORD_DEFAULT);
+        $admin_insert = $db->prepare("INSERT INTO users (username, password_hash, email, company_name, subscription_type, is_active) VALUES ('admin', ?, 'admin@artisan-nd.com', 'Artisan_ND Admin', 'admin', 1)");
+        $admin_insert->execute([$admin_password_hash]);
+    }
 }
 
 // Configuration de sécurité
@@ -133,6 +204,8 @@ function get_db_connection() {
             
             // Activer les clés étrangères
             $db->exec('PRAGMA foreign_keys = ON');
+
+            ensure_database_initialized($db);
         } catch(PDOException $e) {
             error_log("Erreur de connexion à la base de données: " . $e->getMessage());
             die("Erreur de connexion à la base de données. Veuillez contacter l'administrateur.");

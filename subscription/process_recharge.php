@@ -24,8 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // Récupération et validation des données
-    $client_phone = sanitize_input($_POST['client_phone'] ?? '');
-    $client_email = sanitize_input($_POST['client_email'] ?? '');
+    // IMPORTANT: ne pas altérer les données qui entrent dans le chiffrement (pas de htmlspecialchars ici)
+    $client_phone = trim((string)($_POST['client_phone'] ?? ''));
+    $client_email = trim((string)($_POST['client_email'] ?? ''));
+    $client_id = trim((string)($_POST['client_id'] ?? ''));
     $quota_units = intval($_POST['quota_units'] ?? 0);
     $amount = floatval($_POST['amount'] ?? 0);
     
@@ -38,6 +40,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Un email valide est requis";
     }
     
+    if (empty($client_id)) {
+        $errors[] = "L'identifiant client (ClientID) est requis";
+    }
+    
     if ($quota_units <= 0) {
         $errors[] = "Le nombre d'unités doit être supérieur à 0";
     }
@@ -46,88 +52,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Le montant doit être supérieur à 0";
     }
     
-    // Vérifier le fichier de clé publique
-    if (!isset($_FILES['public_key']) || $_FILES['public_key']['error'] !== UPLOAD_ERR_OK) {
-        $errors[] = "Le fichier de clé publique est requis";
-    } else {
-        $public_key_file = $_FILES['public_key'];
-        
-        // Vérifier le type de fichier
-        $allowed_types = ['text/plain', 'text/txt'];
-        $file_extension = strtolower(pathinfo($public_key_file['name'], PATHINFO_EXTENSION));
-        
-        if ($file_extension !== 'txt') {
-            $errors[] = "Le fichier doit être un fichier .txt";
-        }
-        
-        // Lire le contenu de la clé publique
-        $public_key_pem = file_get_contents($public_key_file['tmp_name']);
-        
-        if (empty($public_key_pem)) {
-            $errors[] = "Le fichier de clé publique est vide";
-        }
-        
-        // Vérifier que c'est bien une clé PEM
-        if (strpos($public_key_pem, '-----BEGIN PUBLIC KEY-----') === false) {
-            $errors[] = "Le fichier ne contient pas une clé publique PEM valide";
-        }
-    }
-    
     // Si pas d'erreurs, procéder au traitement
     if (empty($errors)) {
         try {
-            // Préparer les données pour Python
-            $python_data = [
-                'public_key_pem' => $public_key_pem,
-                'phone_number' => $client_phone,
-                'email' => $client_email,
-                'limit' => $quota_units
+            // Préférer l'interpréteur Python du virtualenv 'Env' s'il existe
+            $venv_python = __DIR__ . '/Env/bin/python';
+            if (!is_executable($venv_python)) {
+                // fallback: tenter python3 système
+                $venv_python = trim(shell_exec('which python3 2>/dev/null')) ?: 'python3';
+            }
+            
+            // Chemin vers le script generate_license.py
+            $python_script = __DIR__ . '/artisanSV/generate_license.py';
+            
+            if (!file_exists($python_script)) {
+                throw new Exception("Le script generate_license.py est introuvable: " . $python_script);
+            }
+            
+            // Créer le dossier pour stocker les licences générées (.txt format)
+            $licenses_dir = __DIR__ . '/artisanSV/lic';
+            if (!is_dir($licenses_dir)) {
+                mkdir($licenses_dir, 0755, true);
+            }
+            
+            // Générer un identifiant de transaction unique
+            $transaction_id = uniqid('RCH_' . date('Ymd_') . $user_id . '_', true);
+            $safe_email_for_filename = preg_replace('/[^A-Za-z0-9._@-]+/', '_', $client_email);
+            if ($safe_email_for_filename === null || $safe_email_for_filename === '') {
+                $safe_email_for_filename = 'client';
+            }
+            
+            // Nom du fichier de licence de sortie (.txt format pour le client)
+            $license_filename = $safe_email_for_filename . '_' . $transaction_id . '.txt';
+            $license_file_path = $licenses_dir . '/' . $license_filename;
+            
+            // Construire la commande pour générer la licence
+            // Utiliser la clé privée existante si elle existe, sinon en générer une nouvelle
+            $keys_dir = __DIR__ . '/artisanSV/keys';
+            $private_key_file = $keys_dir . '/artisan_priv_autogen.pem';
+            $command_args = [
+                '--client-id', escapeshellarg($client_id),
+                '--pages', escapeshellarg((string)$quota_units),
+                '--out', escapeshellarg($license_file_path)
             ];
             
-            // Encoder en JSON et échapper pour la ligne de commande
-            $json_data = json_encode($python_data);
-            $escaped_json = escapeshellarg($json_data);
+            // Si une clé privée existe, l'utiliser
+            if (file_exists($private_key_file)) {
+                $command_args[] = '--private-key';
+                $command_args[] = escapeshellarg($private_key_file);
+            }
             
-            // Chemin vers le script Python
-            $python_script = __DIR__ . '/artisan_sv/server.py';
+            // Construire la commande complète
+            $command = escapeshellarg($venv_python) . ' ' . escapeshellarg($python_script) . ' ' . implode(' ', $command_args) . ' 2>&1';
             
             // Exécuter le script Python
-            $command = "python3 " . escapeshellarg($python_script) . " " . $escaped_json . " 2>&1";
             $output = shell_exec($command);
             
             if ($output === null) {
                 throw new Exception("Erreur lors de l'exécution du script Python");
             }
             
-            // Décoder la réponse JSON
-            $result = json_decode(trim($output), true);
-            
-            if (!$result || !isset($result['success'])) {
-                throw new Exception("Réponse invalide du script Python: " . $output);
+            // Vérifier que le fichier de licence a été généré
+            if (!file_exists($license_file_path)) {
+                throw new Exception("La licence n'a pas été générée. Sortie: " . $output);
             }
             
-            if (!$result['success']) {
-                throw new Exception($result['error'] ?? "Erreur inconnue lors du cryptage");
+            // Vérifier que le fichier n'est pas vide
+            if (filesize($license_file_path) === 0) {
+                throw new Exception("Le fichier de licence est vide");
             }
             
-            // Récupérer le message crypté
-            $encrypted_message_base64 = $result['encrypted_message'];
-            $encrypted_message = base64_decode($encrypted_message_base64);
-            
-            // Créer le dossier pour les fichiers cryptés s'il n'existe pas
-            $encrypted_dir = __DIR__ . '/encrypted_keys';
-            if (!is_dir($encrypted_dir)) {
-                mkdir($encrypted_dir, 0755, true);
+            // Nettoyage automatique : supprimer les fichiers de licence plus vieux que 3 jours
+            // et supprimer les entrées correspondantes en base.
+            $cutoff = time() - (3 * 24 * 60 * 60); // 3 jours
+            $old_files = glob($licenses_dir . '/*.txt');
+            if ($old_files !== false) {
+                foreach ($old_files as $of) {
+                    if (is_file($of) && filemtime($of) < $cutoff) {
+                        @unlink($of);
+                        try {
+                            $stmt_clean = $db->prepare("DELETE FROM recharges WHERE encrypted_file_path = ?");
+                            $stmt_clean->execute([$of]);
+                        } catch (Exception $e) {
+                            error_log("Erreur cleanup DB: " . $e->getMessage());
+                        }
+                    }
+                }
             }
             
-            // Générer un nom de fichier unique
-            $transaction_id = uniqid('RCH_' . date('Ymd_') . $user_id . '_', true);
-            $encrypted_file_name = $client_email . '_' . $transaction_id . '.bin';
-            $encrypted_file_path = $encrypted_dir . '/' . $encrypted_file_name;
-            
-            // Sauvegarder le fichier crypté
-            file_put_contents($encrypted_file_path, $encrypted_message);
-            
+            // Chemin relatif pour stockage en base
+            $encrypted_file_path = $license_file_path;
+
             // Stocker dans la base de données avec les champs du formulaire
             $stmt = $db->prepare("
                 INSERT INTO recharges (

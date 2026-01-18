@@ -18,12 +18,18 @@ $allowed_pages = [
     'contact' => 'pages/contact.php',
     '404' => 'pages/404.php',
     'download_file' => 'download.php', // Route pour le téléchargement du fichier
+    'download_software' => 'download_software.php',
     // Routes pour le système d'abonnement
     'login' => 'subscription/login.php',
     'register' => 'subscription/register.php',
     'dashboard' => 'subscription/dashboard.php',
     'recharge' => 'subscription/recharge.php',
+    'process_recharge' => 'subscription/process_recharge.php',
     'admin' => 'subscription/admin.php',
+    'admin_dashboard' => 'subscription/admin_dashboard.php',
+    'admin_partners' => 'subscription/admin_partners.php',
+    'admin_partner' => 'subscription/admin_partner.php',
+    'suspended' => 'subscription/suspended.php',
     'logout' => 'subscription/logout.php',
     'download_key' => 'subscription/download_key.php',
 ];
@@ -43,6 +49,15 @@ if (!defined('ROUTED')) {
 
 // Vérifier si l'utilisateur est connecté
 $is_logged_in = is_logged_in();
+
+// Pages qui nécessitent un téléchargement de fichier (pas de HTML)
+$download_pages = ['download_key', 'download_file', 'download_software'];
+
+// Si c'est une page de téléchargement, inclure directement le fichier sans HTML
+if (in_array($page, $download_pages) && isset($allowed_pages[$page])) {
+    include $allowed_pages[$page];
+    exit; // Important : arrêter l'exécution pour ne pas envoyer de HTML
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -78,6 +93,9 @@ $is_logged_in = is_logged_in();
                         <?php if ($page == 'dashboard'): ?>
                             <li><a href="<?php echo url('recharge'); ?>" <?php echo ($page == 'recharge') ? 'class="active"' : ''; ?>>Nouvelle recharge</a></li>
                         <?php endif; ?>
+                        <?php if (is_admin()): ?>
+                            <li><a href="<?php echo subscription_url('admin_dashboard'); ?>" class="active">Administration</a></li>
+                        <?php endif; ?>
                         <li><a href="<?php echo url('logout'); ?>">Déconnexion</a></li>
                     <?php else: ?>
                         <li><a href="<?php echo url('login'); ?>" <?php echo ($page == 'login') ? 'class="active"' : ''; ?>>Connexion</a></li>
@@ -94,7 +112,7 @@ $is_logged_in = is_logged_in();
             // Chargement de la page demandée
             if (isset($allowed_pages[$page])) {
                 // Vérifier si c'est une page subscription (nécessite un layout différent)
-                if (in_array($page, ['login', 'register', 'dashboard', 'recharge', 'admin'])) {
+                if (in_array($page, ['login', 'register', 'dashboard', 'recharge', 'admin', 'admin_dashboard', 'admin_partners', 'admin_partner', 'suspended'])) {
                     // Les pages subscription ont leur propre layout, on les inclut directement
                     include $allowed_pages[$page];
                 } else {
@@ -132,7 +150,7 @@ $is_logged_in = is_logged_in();
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; <?php echo COPYRIGHT_YEAR; ?> <?php echo SITE_NAME; ?>. Tous droits réservés.</p>
+                <p>&copy; <?php echo COPYRIGHT_YEAR; ?> <?php echo OWNER_NAME; ?>. Tous droits réservés.</p>
             </div>
         </div>
     </footer>

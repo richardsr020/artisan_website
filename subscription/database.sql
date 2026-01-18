@@ -53,4 +53,20 @@ CREATE TABLE IF NOT EXISTS activity_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table des logiciels (versions uploadées)
+CREATE TABLE IF NOT EXISTS software (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    version TEXT,
+    description TEXT,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    download_url TEXT,
+    file_size INTEGER,
+    uploaded_by_user_id INTEGER,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
+);
+
 -- Note: L'utilisateur admin sera créé par le script init_db.php avec le mot de passe hashé correctement

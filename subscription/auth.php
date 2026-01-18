@@ -24,10 +24,15 @@ $stmt = $db->prepare("SELECT id, is_active FROM users WHERE id = ?");
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
 
-if (!$user || !$user['is_active']) {
-    // Utilisateur supprimé ou désactivé
+if (!$user) {
+    // Utilisateur supprimé
     session_destroy();
-    header('Location: ' . LOGIN_PAGE . '?error=account_inactive');
+    header('Location: ' . LOGIN_PAGE);
+    exit;
+}
+
+if (isset($user['is_active']) && (int)$user['is_active'] !== 1) {
+    header('Location: ' . subscription_url('suspended'));
     exit;
 }
 

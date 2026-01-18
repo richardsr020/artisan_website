@@ -20,11 +20,11 @@ $is_logged_in = is_logged_in();
         <div class="premium-badge">RECOMMANDÉ</div>
         <h3>👑 Partenaire Premium</h3>
         <h3>💼 Devenez Partenaire</h3>
-        <div class="price">5$<span style="font-size: 1rem; color: #666;">/mois</span></div>
-        <p>Abonnement mensuel avec tous les avantages:</p>
+        <div class="price"><?php echo number_format(RECHARGE_UNIT_PRICE, 2); ?>$<span style="font-size: 1rem; color: #666;"> / unité de recharge (quotas)</span></div>
+        <p>Paiement mensuel avec tous les avantages:</p>
         <ul style="text-align: left; margin: 1rem 0;">
             <li>✅ Droits sur la comercialisation de quotas de reabonnement</li>
-            <li>✅ Quotas de recharge illimités de vos abonnées</li>
+            <li>✅ Quotas de recharge illimités pour vos abonnées</li>
             <li>✅ Libre de choisir votre prix sur les recharges de vos abonné</li>
             <li>✅ Support technique prioritaire</li>
         </ul>

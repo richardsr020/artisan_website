@@ -9,6 +9,22 @@ require_once 'config.php';
 $db = get_db_connection();
 
 try {
+    $db->exec(
+        "CREATE TABLE IF NOT EXISTS software ("
+        . "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        . "name TEXT NOT NULL, "
+        . "version TEXT, "
+        . "description TEXT, "
+        . "file_name TEXT NOT NULL, "
+        . "file_path TEXT NOT NULL, "
+        . "file_size INTEGER, "
+        . "uploaded_by_user_id INTEGER, "
+        . "is_active BOOLEAN DEFAULT 1, "
+        . "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+        . "FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)"
+        . ")"
+    );
+
     // Vérifier si les colonnes existent déjà
     $stmt = $db->query("PRAGMA table_info(recharges)");
     $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);

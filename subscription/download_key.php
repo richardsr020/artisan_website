@@ -39,9 +39,26 @@ log_activity($user_id, 'download_key', "Téléchargement de la clé pour recharg
 $file_path = $recharge['encrypted_file_path'];
 $file_name = basename($file_path);
 
-header('Content-Type: application/octet-stream');
+// Déterminer le Content-Type selon l'extension
+$file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+$content_type = 'application/octet-stream'; // par défaut
+if ($file_ext === 'txt') {
+    $content_type = 'text/plain';
+} elseif ($file_ext === 'json') {
+    $content_type = 'application/json';
+}
+
+header('Content-Type: ' . $content_type);
 header('Content-Disposition: attachment; filename="' . $file_name . '"');
 header('Content-Length: ' . filesize($file_path));
+header('Cache-Control: no-cache, must-revalidate');
+header('Pragma: no-cache');
+
+// Nettoyer tout output buffer pour éviter du contenu HTML avant le fichier
+while (ob_get_level()) {
+    ob_end_clean();
+}
+
 readfile($file_path);
 exit;
 ?>
