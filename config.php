@@ -8,7 +8,7 @@ define('COPYRIGHT_YEAR', date('Y'));
 
 // Informations de contact
 define('CONTACT_EMAIL', 'contact.nestcorp@gmail.com');
-define('CONTACT_PHONE', '+243 840 149 027');
+define('CONTACT_PHONE', '');
 
 // Chemins des dossiers
 define('SETUP_PATH', 'setup/');
@@ -53,6 +53,11 @@ $messages = [
     'download_title' => 'Téléchargez Artisan_ND gratuitement',
     'subscription_info' => 'Abonnez-vous pour accéder au système de recharge des quotas'
 ];
+
+// Prix d'une unité (page) contenue dans une clé de licence
+if (!defined('RECHARGE_UNIT_PRICE')) {
+    define('RECHARGE_UNIT_PRICE', 0.005);
+}
 
 // Définir une constante pour indiquer que le fichier est inclus via index.php
 if (!defined('ROUTED')) {

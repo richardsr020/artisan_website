@@ -21,19 +21,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($partner_id > 0) {
         if ($action === 'deactivate_partner') {
-            $stmt = $db->prepare("UPDATE users SET is_active = 0 WHERE id = ? AND subscription_type != 'admin'");
-            $stmt->execute([$partner_id]);
-            if (function_exists('log_activity')) {
-                log_activity($_SESSION['user_id'] ?? null, 'admin_deactivate_partner', 'Partner id=' . $partner_id);
+            // Transaction courte pour l'écriture
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("UPDATE users SET is_active = 0 WHERE id = ? AND subscription_type != 'admin'");
+                $stmt->execute([$partner_id]);
+                $db->commit();
+                
+                // Journaliser après la transaction
+                if (function_exists('log_activity')) {
+                    log_activity($_SESSION['user_id'] ?? null, 'admin_deactivate_partner', 'Partner id=' . $partner_id);
+                }
+                $message = 'Partenaire désactivé.';
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $message = 'Erreur: ' . $e->getMessage();
             }
-            $message = 'Partenaire désactivé.';
         } elseif ($action === 'activate_partner') {
-            $stmt = $db->prepare("UPDATE users SET is_active = 1 WHERE id = ? AND subscription_type != 'admin'");
-            $stmt->execute([$partner_id]);
-            if (function_exists('log_activity')) {
-                log_activity($_SESSION['user_id'] ?? null, 'admin_activate_partner', 'Partner id=' . $partner_id);
+            // Transaction courte pour l'écriture
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("UPDATE users SET is_active = 1 WHERE id = ? AND subscription_type != 'admin'");
+                $stmt->execute([$partner_id]);
+                $db->commit();
+                
+                // Journaliser après la transaction
+                if (function_exists('log_activity')) {
+                    log_activity($_SESSION['user_id'] ?? null, 'admin_activate_partner', 'Partner id=' . $partner_id);
+                }
+                $message = 'Partenaire activé.';
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $message = 'Erreur: ' . $e->getMessage();
             }
-            $message = 'Partenaire activé.';
         }
     }
 }
@@ -138,7 +162,7 @@ foreach ($stats_rows as $row) {
                             $s = $stats_map[$pid] ?? ['ops' => 0, 'units' => 0, 'amount' => 0];
                             $units = (int)($s['units'] ?? 0);
                             $ops = (int)($s['ops'] ?? 0);
-                            $due = $units * RECHARGE_UNIT_PRICE;
+                            $due = (int)round($units * RECHARGE_UNIT_PRICE);
                         ?>
                         <tr>
                             <td><?php echo $pid; ?></td>
@@ -152,7 +176,7 @@ foreach ($stats_rows as $row) {
                                 <?php echo ((int)$p['is_active'] === 1) ? 'Actif' : 'Inactif'; ?>
                             </td>
                             <td><?php echo $ops; ?> ops / <?php echo $units; ?> unités</td>
-                            <td><?php echo number_format((float)$due, 2); ?> $</td>
+                            <td><?php echo number_format($due, 0); ?> $</td>
                             <td>
                                 <div class="row-actions">
                                     <?php if ((int)$p['is_active'] === 1): ?>
