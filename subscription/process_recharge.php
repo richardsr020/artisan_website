@@ -131,9 +131,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (is_file($of) && filemtime($of) < $cutoff) {
                         @unlink($of);
                         try {
+                            // Transaction courte pour DELETE
+                            $db->beginTransaction();
                             $stmt_clean = $db->prepare("DELETE FROM recharges WHERE encrypted_file_path = ?");
                             $stmt_clean->execute([$of]);
+                            $db->commit();
                         } catch (Exception $e) {
+                            if ($db->inTransaction()) {
+                                $db->rollBack();
+                            }
                             error_log("Erreur cleanup DB: " . $e->getMessage());
                         }
                     }
@@ -143,34 +149,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Chemin relatif pour stockage en base
             $encrypted_file_path = $license_file_path;
 
-            // Stocker dans la base de données avec les champs du formulaire
-            $stmt = $db->prepare("
-                INSERT INTO recharges (
-                    user_id, client_phone, client_email, quota_units, amount, 
-                    encrypted_file_path, transaction_id, status, completed_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', datetime('now'))
-            ");
-            
-            $stmt->execute([
-                $user_id,
-                $client_phone,
-                $client_email,
-                $quota_units,
-                $amount,
-                $encrypted_file_path,
-                $transaction_id
-            ]);
-            
-            $recharge_id = $db->lastInsertId();
-            
-            // Journaliser l'action
-            log_activity($user_id, 'recharge_completed', "Recharge effectuée pour client: $client_email (ID: $recharge_id)");
-            
-            $success = true;
-            
-            // Rediriger vers le dashboard avec un message de succès
-            header('Location: ' . DASHBOARD_PAGE . '&success=recharge_completed&id=' . $recharge_id);
-            exit;
+            // Stocker dans la base de données avec les champs du formulaire - transaction courte
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("
+                    INSERT INTO recharges (
+                        user_id, client_phone, client_email, quota_units, amount, 
+                        encrypted_file_path, transaction_id, status, completed_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', datetime('now'))
+                ");
+                
+                $stmt->execute([
+                    $user_id,
+                    $client_phone,
+                    $client_email,
+                    $quota_units,
+                    $amount,
+                    $encrypted_file_path,
+                    $transaction_id
+                ]);
+                
+                $recharge_id = $db->lastInsertId();
+                $db->commit();
+                
+                // Journaliser l'action après la transaction
+                log_activity($user_id, 'recharge_completed', "Recharge effectuée pour client: $client_email (ID: $recharge_id)");
+                
+                $success = true;
+                
+                // Rediriger vers le dashboard avec un message de succès
+                header('Location: ' . DASHBOARD_PAGE . '&success=recharge_completed&id=' . $recharge_id);
+                exit;
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                error_log("Erreur lors de la recharge: " . $e->getMessage());
+                $errors[] = "Erreur lors du traitement: " . $e->getMessage();
+            }
             
         } catch (Exception $e) {
             error_log("Erreur lors de la recharge: " . $e->getMessage());

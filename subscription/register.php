@@ -79,47 +79,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Si toujours pas d'erreurs, créer le compte
             if (empty($errors)) {
+                // Calculs AVANT la transaction
                 $password_hash = password_hash($password, PASSWORD_DEFAULT);
                 $subscription_start = date('Y-m-d');
                 $subscription_end = date('Y-m-d', strtotime('+1 month'));
                 
-                $stmt = $db->prepare("
-                    INSERT INTO users (username, password_hash, email, company_name, phone, subscription_type, subscription_start, subscription_end, is_active) 
-                    VALUES (?, ?, ?, ?, ?, 'premium', ?, ?, 1)
-                ");
-                
-                $stmt->execute([
-                    $username,
-                    $password_hash,
-                    $email,
-                    $company_name,
-                    $phone,
-                    $subscription_start,
-                    $subscription_end
-                ]);
-                
-                $user_id = $db->lastInsertId();
-                
-                // Journaliser l'inscription
-                log_activity($user_id, 'register', "Inscription de l'utilisateur: $username");
-                
-                // Créer un paiement initial (abonnement)
-                $payment_stmt = $db->prepare("
-                    INSERT INTO payments (user_id, amount, payment_method, status) 
-                    VALUES (?, 25000, 'subscription', 'completed')
-                ");
-                $payment_stmt->execute([$user_id]);
-                
-                $success = true;
-                
-                // Optionnel: connecter automatiquement l'utilisateur
-                $_SESSION['user_id'] = $user_id;
-                $_SESSION['username'] = $username;
-                $_SESSION['is_admin'] = false;
-                $_SESSION['company_name'] = $company_name;
-                
-                // Rediriger vers le dashboard après 2 secondes
-                header("Refresh: 2; url=" . DASHBOARD_PAGE);
+                // Transaction courte pour les écritures
+                try {
+                    $db->beginTransaction();
+                    
+                    $stmt = $db->prepare("
+                        INSERT INTO users (username, password_hash, email, company_name, phone, subscription_type, subscription_start, subscription_end, is_active) 
+                        VALUES (?, ?, ?, ?, ?, 'premium', ?, ?, 1)
+                    ");
+                    
+                    $stmt->execute([
+                        $username,
+                        $password_hash,
+                        $email,
+                        $company_name,
+                        $phone,
+                        $subscription_start,
+                        $subscription_end
+                    ]);
+                    
+                    $user_id = $db->lastInsertId();
+                    
+                    // Créer un paiement initial (abonnement) dans la même transaction
+                    $payment_stmt = $db->prepare("
+                        INSERT INTO payments (user_id, amount, payment_method, status) 
+                        VALUES (?, 25000, 'subscription', 'completed')
+                    ");
+                    $payment_stmt->execute([$user_id]);
+                    
+                    $db->commit();
+                    
+                    // Journaliser l'inscription après la transaction
+                    log_activity($user_id, 'register', "Inscription de l'utilisateur: $username");
+                    
+                    $success = true;
+                    
+                    // Optionnel: connecter automatiquement l'utilisateur
+                    $_SESSION['user_id'] = $user_id;
+                    $_SESSION['username'] = $username;
+                    $_SESSION['is_admin'] = false;
+                    $_SESSION['company_name'] = $company_name;
+                    
+                    // Rediriger vers le dashboard après 2 secondes
+                    header("Refresh: 2; url=" . DASHBOARD_PAGE);
+                } catch (PDOException $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
+                    $errors[] = "Erreur lors de l'inscription: " . $e->getMessage();
+                }
             }
         } catch (PDOException $e) {
             error_log("Erreur lors de l'inscription: " . $e->getMessage());

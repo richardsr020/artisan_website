@@ -27,28 +27,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     switch($action) {
         case 'add_user':
+            // Calculs AVANT la transaction
             $username = $_POST['username'];
             $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
             $email = $_POST['email'];
             $company_name = $_POST['company_name'];
             $subscription_type = $_POST['subscription_type'];
             
-            $stmt = $db->prepare("INSERT INTO users (username, password_hash, email, company_name, subscription_type) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$username, $password, $email, $company_name, $subscription_type]);
-            $message = "Utilisateur ajouté avec succès!";
+            // Transaction courte pour l'écriture
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("INSERT INTO users (username, password_hash, email, company_name, subscription_type) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$username, $password, $email, $company_name, $subscription_type]);
+                $db->commit();
+                $message = "Utilisateur ajouté avec succès!";
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $message = "Erreur: " . $e->getMessage();
+            }
             break;
             
         case 'update_subscription':
+            // Calculs AVANT la transaction
             $user_id = $_POST['user_id'];
             $subscription_end = $_POST['subscription_end'];
             $is_active = $_POST['is_active'] ?? 0;
             
-            $stmt = $db->prepare("UPDATE users SET subscription_end = ?, is_active = ? WHERE id = ?");
-            $stmt->execute([$subscription_end, $is_active, $user_id]);
-            $message = "Abonnement mis à jour!";
+            // Transaction courte pour l'écriture
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("UPDATE users SET subscription_end = ?, is_active = ? WHERE id = ?");
+                $stmt->execute([$subscription_end, $is_active, $user_id]);
+                $db->commit();
+                $message = "Abonnement mis à jour!";
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $message = "Erreur: " . $e->getMessage();
+            }
             break;
 
         case 'add_software_link':
+            // Calculs AVANT la transaction
             $name = sanitize_input($_POST['software_name'] ?? '');
             $version = sanitize_input($_POST['software_version'] ?? '');
             $description = sanitize_input($_POST['software_description'] ?? '');
@@ -70,14 +93,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file_name = 'download';
             }
 
-            $stmt = $db->prepare("INSERT INTO software (name, version, description, file_name, file_path, download_url, file_size, uploaded_by_user_id, is_active) VALUES (?, ?, ?, ?, '', ?, NULL, ?, 1)");
-            $stmt->execute([$name, $version, $description, $file_name, $download_url, $uploaded_by]);
-
-            if (function_exists('log_activity')) {
-                log_activity($uploaded_by, 'add_software_link', 'Ajout lien logiciel: ' . $download_url);
+            // Transaction courte pour l'écriture
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("INSERT INTO software (name, version, description, file_name, file_path, download_url, file_size, uploaded_by_user_id, is_active) VALUES (?, ?, ?, ?, '', ?, NULL, ?, 1)");
+                $stmt->execute([$name, $version, $description, $file_name, $download_url, $uploaded_by]);
+                $db->commit();
+                
+                // Journaliser après la transaction
+                if (function_exists('log_activity')) {
+                    log_activity($uploaded_by, 'add_software_link', 'Ajout lien logiciel: ' . $download_url);
+                }
+                
+                $message = "Lien GitHub enregistré avec succès!";
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $message = "Erreur: " . $e->getMessage();
             }
-
-            $message = "Lien GitHub enregistré avec succès!";
             break;
     }
 }

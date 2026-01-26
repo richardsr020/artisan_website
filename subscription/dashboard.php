@@ -25,6 +25,41 @@ $recharge_stmt = $db->prepare("SELECT COUNT(*) as total, SUM(amount) as revenue 
 $recharge_stmt->execute([$user_id]);
 $stats = $recharge_stmt->fetch(PDO::FETCH_ASSOC);
 
+// Vérifier et suspendre les comptes en retard
+check_and_suspend_overdue_accounts();
+
+// Vérifier si le compte est suspendu pour dette
+$user_check = $db->prepare("SELECT debt_suspended FROM users WHERE id = ?");
+$user_check->execute([$user_id]);
+$user_debt_status = $user_check->fetch(PDO::FETCH_ASSOC);
+if ((int)($user_debt_status['debt_suspended'] ?? 0) === 1) {
+    header('Location: ' . subscription_url('suspended', ['reason' => 'debt']));
+    exit;
+}
+
+// Calculer la somme due à la plateforme depuis le dernier paiement (unités * prix unitaire)
+$amount_due = 0;
+$total_units = 0;
+
+// Récupérer la date du dernier paiement
+$user_payment_stmt = $db->prepare("SELECT last_payment_date FROM users WHERE id = ?");
+$user_payment_stmt->execute([$user_id]);
+$user_payment_data = $user_payment_stmt->fetch(PDO::FETCH_ASSOC);
+$last_payment_date = $user_payment_data['last_payment_date'] ?? null;
+
+// Calculer les unités depuis le dernier paiement (ou toutes si pas de paiement)
+if ($last_payment_date) {
+    $units_stmt = $db->prepare("SELECT COALESCE(SUM(quota_units), 0) as total_units FROM recharges WHERE user_id = ? AND status = 'completed' AND recharge_date > ?");
+    $units_stmt->execute([$user_id, $last_payment_date]);
+} else {
+    // Si pas de paiement, calculer depuis toutes les recharges
+    $units_stmt = $db->prepare("SELECT COALESCE(SUM(quota_units), 0) as total_units FROM recharges WHERE user_id = ? AND status = 'completed'");
+    $units_stmt->execute([$user_id]);
+}
+$units_result = $units_stmt->fetch(PDO::FETCH_ASSOC);
+$total_units = (int)($units_result['total_units'] ?? 0);
+$amount_due = (int)round($total_units * RECHARGE_UNIT_PRICE);
+
 // Récupérer les recharges récentes
 $recent_stmt = $db->prepare("SELECT * FROM recharges WHERE user_id = ? ORDER BY recharge_date DESC LIMIT 10");
 $recent_stmt->execute([$user_id]);
@@ -69,13 +104,37 @@ $recent_recharges = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
             transform: translateY(-5px);
             box-shadow: 0 10px 30px rgba(139, 69, 19, 0.15);
         }
+        .stat-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
         .stat-value {
-            font-size: 2.5rem;
+            font-size: 1.8rem;
             font-weight: 700;
             background: linear-gradient(135deg, #8B4513 0%, #FF8C00 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+        }
+        
+        @media (max-width: 768px) {
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            .stat-value {
+                font-size: 1.4rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            .stat-value {
+                font-size: 1.2rem;
+            }
         }
         .recharge-form {
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 250, 250, 0.9) 100%);
@@ -92,20 +151,49 @@ $recent_recharges = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
             backdrop-filter: blur(10px);
         }
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 1rem;
+            min-width: 600px;
         }
         th, td {
             padding: 14px;
             text-align: left;
             border-bottom: 1px solid rgba(204, 204, 204, 0.3);
+            font-size: 0.95rem;
         }
         th {
             background: linear-gradient(135deg, rgba(139, 69, 19, 0.05) 0%, rgba(255, 140, 0, 0.05) 100%);
             font-weight: 600;
             color: #1a1a1a;
+        }
+        
+        /* Masquer certaines colonnes sur mobile */
+        @media (max-width: 768px) {
+            .col-date { display: none; }
+            .col-email { display: none; }
+            .col-phone { display: none; }
+            .col-status { display: none; }
+            table { min-width: 300px; }
+            th, td {
+                padding: 10px 8px;
+                font-size: 0.85rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            th, td {
+                padding: 8px 6px;
+                font-size: 0.75rem;
+            }
+            .recent-recharges {
+                padding: 1.5rem;
+            }
         }
         .status-completed {
             color: #8B4513;
@@ -224,7 +312,14 @@ $recent_recharges = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Revenus totaux</div>
-                    <div class="stat-value"><?php echo number_format($stats['revenue'] ?: 0, 2); ?>$</div>
+                    <div class="stat-value"><?php echo number_format((int)round($stats['revenue'] ?: 0), 0); ?>$</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Montant dû à la plateforme</div>
+                    <div class="stat-value" style="color: #e74c3c;"><?php echo number_format($amount_due, 0); ?>$</div>
+                    <div style="font-size: 0.7rem; color: #666; margin-top: 0.3rem;">
+                        (<?php echo number_format($total_units, 0); ?> unités × <?php echo number_format(RECHARGE_UNIT_PRICE, 2); ?>$)
+                    </div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Réabonnement dans: </div>
@@ -264,40 +359,42 @@ $recent_recharges = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
                 <?php if (empty($recent_recharges)): ?>
                     <p>Aucune recharge effectuée pour le moment.</p>
                 <?php else: ?>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Email client</th>
-                                <th>Téléphone</th>
-                                <th>Unités</th>
-                                <th>Montant</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($recent_recharges as $recharge): ?>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
                                 <tr>
-                                    <td><?php echo date('d/m/Y H:i', strtotime($recharge['recharge_date'])); ?></td>
-                                    <td><?php echo htmlspecialchars($recharge['client_email']); ?></td>
-                                    <td><?php echo htmlspecialchars($recharge['client_phone']); ?></td>
-                                    <td><?php echo $recharge['quota_units']; ?></td>
-                                    <td><?php echo number_format($recharge['amount'], 2); ?> $</td>
-                                    <td class="status-<?php echo $recharge['status']; ?>">
-                                        <?php echo $recharge['status'] == 'completed' ? 'Complétée' : 'En attente'; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ($recharge['status'] == 'completed' && !empty($recharge['encrypted_file_path'])): ?>
-                                            <a href="<?php echo subscription_url('download_key', ['id' => $recharge['id']]); ?>" class="btn-download" style="color: #8B4513; text-decoration: none; font-weight: 600;">📥 Télécharger</a>
-                                        <?php else: ?>
-                                            <span style="color: #999;">-</span>
-                                        <?php endif; ?>
-                                    </td>
+                                    <th class="col-date">Date</th>
+                                    <th class="col-email">Email client</th>
+                                    <th class="col-phone">Téléphone</th>
+                                    <th>Unités</th>
+                                    <th>Montant</th>
+                                    <th class="col-status">Statut</th>
+                                    <th>Actions</th>
                                 </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($recent_recharges as $recharge): ?>
+                                    <tr>
+                                        <td class="col-date"><?php echo date('d/m/Y H:i', strtotime($recharge['recharge_date'])); ?></td>
+                                        <td class="col-email"><?php echo htmlspecialchars($recharge['client_email']); ?></td>
+                                        <td class="col-phone"><?php echo htmlspecialchars($recharge['client_phone']); ?></td>
+                                        <td><?php echo $recharge['quota_units']; ?></td>
+                                        <td><?php echo number_format((int)round($recharge['amount']), 0); ?> $</td>
+                                        <td class="col-status status-<?php echo $recharge['status']; ?>">
+                                            <?php echo $recharge['status'] == 'completed' ? 'Complétée' : 'En attente'; ?>
+                                        </td>
+                                        <td>
+                                            <?php if ($recharge['status'] == 'completed' && !empty($recharge['encrypted_file_path'])): ?>
+                                                <a href="<?php echo subscription_url('download_key', ['id' => $recharge['id']]); ?>" class="btn-download" style="color: #8B4513; text-decoration: none; font-weight: 600;">📥 Télécharger</a>
+                                            <?php else: ?>
+                                                <span style="color: #999;">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>
@@ -310,5 +407,41 @@ $recent_recharges = $recent_stmt->fetchAll(PDO::FETCH_ASSOC);
     </footer>
 
     <script src="../assets/js/main.js"></script>
+    <script>
+        // Corriger la navbar mobile pour dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+            const mainNav = document.getElementById('mainNav');
+            
+            if (mobileMenuToggle && mainNav) {
+                mobileMenuToggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    mobileMenuToggle.classList.toggle('active');
+                    mainNav.classList.toggle('active');
+                });
+                
+                // Fermer le menu quand on clique sur un lien
+                const navLinks = mainNav.querySelectorAll('a');
+                navLinks.forEach(link => {
+                    link.addEventListener('click', function() {
+                        mobileMenuToggle.classList.remove('active');
+                        mainNav.classList.remove('active');
+                    });
+                });
+                
+                // Fermer le menu quand on clique en dehors
+                document.addEventListener('click', function(event) {
+                    const isClickInsideNav = mainNav.contains(event.target);
+                    const isClickOnToggle = mobileMenuToggle.contains(event.target);
+                    
+                    if (!isClickInsideNav && !isClickOnToggle && mainNav.classList.contains('active')) {
+                        mobileMenuToggle.classList.remove('active');
+                        mainNav.classList.remove('active');
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

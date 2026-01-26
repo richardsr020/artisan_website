@@ -74,10 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Connexion échouée
                 $error = "Identifiants incorrects";
                 
-                // Journaliser la tentative échouée
+                // Journaliser la tentative échouée - transaction courte
                 $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+                $db->beginTransaction();
                 $log_stmt = $db->prepare("INSERT INTO activity_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)");
                 $log_stmt->execute([null, 'login_failed', "Tentative de connexion échouée pour: $username", $ip_address]);
+                $db->commit();
             }
         }
     }

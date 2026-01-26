@@ -48,7 +48,7 @@ if (!defined('LOGOUT_PAGE')) {
 }
 
 if (!defined('RECHARGE_UNIT_PRICE')) {
-    define('RECHARGE_UNIT_PRICE', 0.01);
+    define('RECHARGE_UNIT_PRICE', 0.005);
 }
 
 if (!function_exists('str_ends_with')) {
@@ -125,12 +125,37 @@ function ensure_database_initialized(PDO $db) {
         error_log("Erreur migration software: " . $e->getMessage());
     }
 
+    // Migration table users: ajouter last_payment_date et debt_suspended si manquantes
+    try {
+        $stmt = $db->query("PRAGMA table_info(users)");
+        $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $column_names = array_column($columns, 'name');
+        if (!in_array('last_payment_date', $column_names, true)) {
+            $db->exec("ALTER TABLE users ADD COLUMN last_payment_date TIMESTAMP");
+        }
+        if (!in_array('debt_suspended', $column_names, true)) {
+            $db->exec("ALTER TABLE users ADD COLUMN debt_suspended BOOLEAN DEFAULT 0");
+        }
+    } catch (PDOException $e) {
+        error_log("Erreur migration users: " . $e->getMessage());
+    }
+
     $admin_check = $db->prepare("SELECT COUNT(*) FROM users WHERE username = 'admin'");
     $admin_check->execute();
     if ((int)$admin_check->fetchColumn() === 0) {
-        $admin_password_hash = password_hash('admin123', PASSWORD_DEFAULT);
-        $admin_insert = $db->prepare("INSERT INTO users (username, password_hash, email, company_name, subscription_type, is_active) VALUES ('admin', ?, 'admin@artisan-nd.com', 'Artisan_ND Admin', 'admin', 1)");
-        $admin_insert->execute([$admin_password_hash]);
+        // Transaction courte pour l'INSERT admin
+        try {
+            $admin_password_hash = password_hash('admin123', PASSWORD_DEFAULT);
+            $db->beginTransaction();
+            $admin_insert = $db->prepare("INSERT INTO users (username, password_hash, email, company_name, subscription_type, is_active) VALUES ('admin', ?, 'admin@artisan-nd.com', 'Artisan_ND Admin', 'admin', 1)");
+            $admin_insert->execute([$admin_password_hash]);
+            $db->commit();
+        } catch (PDOException $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log("Erreur création admin: " . $e->getMessage());
+        }
     }
 }
 
@@ -185,7 +210,8 @@ function redirect_if_logged_in() {
 }
 
 /**
- * Connexion à la base de données SQLite
+ * Connexion à la base de données SQLite avec optimisations pour la concurrence
+ * Centralisée et réutilisée partout - UNE SEULE INSTANCE
  */
 function get_db_connection() {
     static $db = null;
@@ -201,6 +227,12 @@ function get_db_connection() {
             $db = new PDO('sqlite:' . DB_PATH);
             $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $db->setAttribute(PDO::ATTR_TIMEOUT, 5);
+            
+            // SQLite concurrency optimizations
+            $db->exec("PRAGMA journal_mode = WAL;");
+            $db->exec("PRAGMA synchronous = NORMAL;");
+            $db->exec("PRAGMA busy_timeout = 5000;");
             
             // Activer les clés étrangères
             $db->exec('PRAGMA foreign_keys = ON');
@@ -245,18 +277,25 @@ function sanitize_input($data) {
 
 /**
  * Journalise une action utilisateur
+ * Transaction courte pour éviter les conflits
  */
 function log_activity($user_id, $action, $details = null) {
     try {
         $db = get_db_connection();
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         
+        // Transaction courte pour l'écriture
+        $db->beginTransaction();
         $stmt = $db->prepare("
             INSERT INTO activity_logs (user_id, action, details, ip_address) 
             VALUES (?, ?, ?, ?)
         ");
         $stmt->execute([$user_id, $action, $details, $ip_address]);
+        $db->commit();
     } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         error_log("Erreur lors de la journalisation: " . $e->getMessage());
     }
 }
@@ -348,5 +387,132 @@ function get_current_user_subscription_status() {
         return null;
     }
     return check_subscription_status($_SESSION['user_id']);
+}
+
+/**
+ * Calcule la dette totale d'un partenaire depuis le dernier paiement (unités * prix unitaire)
+ * @param int $user_id ID de l'utilisateur
+ * @return float Montant de la dette
+ */
+function calculate_partner_debt($user_id) {
+    $db = get_db_connection();
+    
+    // Récupérer la date du dernier paiement
+    $user_stmt = $db->prepare("SELECT last_payment_date FROM users WHERE id = ?");
+    $user_stmt->execute([$user_id]);
+    $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+    $last_payment_date = $user_data['last_payment_date'] ?? null;
+    
+    // Calculer les unités depuis le dernier paiement (ou toutes si pas de paiement)
+    if ($last_payment_date) {
+        $stmt = $db->prepare("SELECT COALESCE(SUM(quota_units), 0) as total_units FROM recharges WHERE user_id = ? AND status = 'completed' AND recharge_date > ?");
+        $stmt->execute([$user_id, $last_payment_date]);
+    } else {
+        // Si pas de paiement, calculer depuis toutes les recharges
+        $stmt = $db->prepare("SELECT COALESCE(SUM(quota_units), 0) as total_units FROM recharges WHERE user_id = ? AND status = 'completed'");
+        $stmt->execute([$user_id]);
+    }
+    
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $total_units = (int)($result['total_units'] ?? 0);
+    return $total_units * RECHARGE_UNIT_PRICE;
+}
+
+/**
+ * Vérifie et désactive automatiquement les comptes avec dette impayée depuis plus de 30 jours
+ */
+function check_and_suspend_overdue_accounts() {
+    $db = get_db_connection();
+    
+    // Récupérer tous les partenaires actifs (non admin)
+    $stmt = $db->query("SELECT id, last_payment_date, debt_suspended FROM users WHERE subscription_type != 'admin' AND is_active = 1");
+    $partners = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($partners as $partner) {
+        $user_id = $partner['id'];
+        $last_payment = $partner['last_payment_date'];
+        $debt_suspended = (int)($partner['debt_suspended'] ?? 0);
+        
+        // Calculer la dette actuelle
+        $debt = calculate_partner_debt($user_id);
+        
+        // Si pas de dette, réinitialiser last_payment_date si nécessaire
+        if ($debt <= 0) {
+            if ($debt_suspended == 1) {
+                // Réactiver le compte si la dette est réglée - transaction courte
+                try {
+                    $db->beginTransaction();
+                    $stmt = $db->prepare("UPDATE users SET debt_suspended = 0, is_active = 1 WHERE id = ?");
+                    $stmt->execute([$user_id]);
+                    $db->commit();
+                } catch (PDOException $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
+                    error_log("Erreur réactivation compte: " . $e->getMessage());
+                }
+            }
+            continue;
+        }
+        
+        // Si pas de date de paiement, utiliser la date de création
+        if (empty($last_payment)) {
+            $user_stmt = $db->prepare("SELECT created_at FROM users WHERE id = ?");
+            $user_stmt->execute([$user_id]);
+            $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+            $last_payment = $user_data['created_at'] ?? date('Y-m-d H:i:s');
+        }
+        
+        // Calculer les jours depuis le dernier paiement
+        $last_payment_date = new DateTime($last_payment);
+        $now = new DateTime();
+        $days_since_payment = $now->diff($last_payment_date)->days;
+        
+        // Si plus de 30 jours et pas déjà suspendu pour dette
+        if ($days_since_payment > 30 && $debt_suspended == 0) {
+            // Suspendre le compte - transaction courte
+            try {
+                $db->beginTransaction();
+                $stmt = $db->prepare("UPDATE users SET is_active = 0, debt_suspended = 1 WHERE id = ?");
+                $stmt->execute([$user_id]);
+                $db->commit();
+                
+                // Journaliser après la transaction
+                log_activity($user_id, 'auto_suspend_debt', 'Compte suspendu automatiquement pour dette impayée depuis ' . $days_since_payment . ' jours');
+            } catch (PDOException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                error_log("Erreur suspension compte: " . $e->getMessage());
+            }
+        }
+    }
+}
+
+/**
+ * Remet la dette à zéro pour un partenaire (marque comme payé)
+ * Transaction courte pour éviter les conflits
+ * @param int $user_id ID de l'utilisateur
+ */
+function reset_partner_debt($user_id) {
+    $db = get_db_connection();
+    $now = date('Y-m-d H:i:s');
+    
+    try {
+        // Transaction courte pour l'écriture
+        $db->beginTransaction();
+        $stmt = $db->prepare("UPDATE users SET last_payment_date = ?, debt_suspended = 0, is_active = 1 WHERE id = ?");
+        $stmt->execute([$now, $user_id]);
+        $db->commit();
+        
+        // Journaliser après la transaction
+        log_activity($user_id, 'debt_reset', 'Dette remise à zéro par admin');
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log("Erreur lors de la réinitialisation de la dette: " . $e->getMessage());
+        throw $e;
+    }
 }
 ?>

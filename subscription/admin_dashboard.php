@@ -31,7 +31,7 @@ $kpis_recharges['total_recharges'] = $kpis_recharges['total_recharges'] ?: 0;
 $kpis_recharges['total_units'] = $kpis_recharges['total_units'] ?: 0;
 $kpis_recharges['total_amount'] = $kpis_recharges['total_amount'] ?: 0;
 
-$due_amount = $kpis_recharges['total_units'] * RECHARGE_UNIT_PRICE;
+$due_amount = (int)round($kpis_recharges['total_units'] * RECHARGE_UNIT_PRICE);
 
 // Historique complet des recharges
 $partner_id = isset($_GET['partner_id']) ? intval($_GET['partner_id']) : 0;
@@ -154,7 +154,7 @@ $partners = $partners_stmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                     <div class="admin-card" style="margin:0;">
                         <strong>Somme mensuelle à verser (base)</strong><br>
-                        <?php echo number_format((float)$due_amount, 2); ?> $<br>
+                        <?php echo number_format($due_amount, 0); ?> $<br>
                         <span style="color:#666;">= unités x <?php echo number_format((float)RECHARGE_UNIT_PRICE, 2); ?>$</span>
                     </div>
                 </div>
