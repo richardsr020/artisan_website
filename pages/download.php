@@ -75,7 +75,7 @@ if ($is_logged_in) {
                     </tbody>
                 </table>
             <?php else: ?>
-                <a href= "https://github.com/richardsr020/artisan_suite.git" class="cta-button" disabled style="">Télécharger </a>
+                <a href= "../files/downloads/artisan_nd_v1.1.rar" class="cta-button" disabled style="">Télécharger </a>
             <?php endif; ?>
         <?php else: ?>
             <button class="cta-button" disabled style="opacity: 0.6; cursor: not-allowed;">Télécharger</button>

@@ -31,4 +31,12 @@ Thumbs.db
 *.bak
 *.backup
 
+# Ficher zip de logiciel
+# Ignorer tous les fichiers téléchargés (volumineux)
+files/downloads/
+
+# Optionnel : ignorer seulement certains types
+files/downloads/*.zip
+files/downloads/*.pdf
+files/downloads/*.rar
 

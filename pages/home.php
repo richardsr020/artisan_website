@@ -3,10 +3,7 @@
     <h1>Artisan_ND - Numérotation intelligente de facturiers</h1>
     <p>Remplaçons ensemble le numéroteur classique manuel, mécanique et fatigant par une solution moderne, rapide et efficace.</p>
     <a href="<?php echo url('download'); ?>" class="cta-button">Télécharger gratuitement</a>
-    <div class="hero-links">
-        <a href="docs/manual.pdf" class="hero-link" target="_blank">📖 Manuel d'utilisation</a>
-        <a href="docs/business_plan.mp3" class="hero-link" target="_blank">🎧 Devenir revendeur</a>
-    </div>
+   
 </div>
 
 <div class="features-preview">
