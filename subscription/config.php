@@ -48,7 +48,7 @@ if (!defined('LOGOUT_PAGE')) {
 }
 
 if (!defined('RECHARGE_UNIT_PRICE')) {
-    define('RECHARGE_UNIT_PRICE', 0.005);
+    define('RECHARGE_UNIT_PRICE', 0.001);
 }
 
 if (!function_exists('str_ends_with')) {

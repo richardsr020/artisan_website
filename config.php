@@ -56,7 +56,7 @@ $messages = [
 
 // Prix d'une unité (page) contenue dans une clé de licence
 if (!defined('RECHARGE_UNIT_PRICE')) {
-    define('RECHARGE_UNIT_PRICE', 0.005);
+    define('RECHARGE_UNIT_PRICE', 0.001);
 }
 
 // Définir une constante pour indiquer que le fichier est inclus via index.php

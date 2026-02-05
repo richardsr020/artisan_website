@@ -21,34 +21,12 @@ if ($is_logged_in) {
 ?>
 <h2 class="page-title">Télécharger Artisan_ND</h2>
 
-<?php if (!$is_logged_in): ?>
-    <div class="auth-required-message" style="background: linear-gradient(135deg, #fff5f0 0%, #ffe8d6 100%); border: 2px solid #d2691e; border-radius: 12px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(210, 105, 30, 0.15);">
-        <div style="text-align: center;">
-            <h3 style="color: #8b4513; margin-bottom: 15px; font-size: 1.5em;">🔒 Accès réservé aux membres</h3>
-            <p style="color: #654321; font-size: 1.1em; margin-bottom: 20px;">
-                Pour télécharger Artisan_ND, vous devez créer un compte gratuit sur notre plateforme.
-            </p>
-            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-                <a href="<?php echo url('register'); ?>" class="cta-button" style="background: linear-gradient(135deg, #d2691e 0%, #cd853f 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: transform 0.2s, box-shadow 0.2s;">
-                    Créer un compte gratuit
-                </a>
-                <a href="<?php echo url('login'); ?>" class="cta-button" style="background: linear-gradient(135deg, #654321 0%, #8b4513 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: transform 0.2s, box-shadow 0.2s;">
-                    Se connecter
-                </a>
-            </div>
-            <p style="color: #8b4513; margin-top: 20px; font-size: 0.95em;">
-                ⚡ L'inscription est rapide et gratuite !
-            </p>
-        </div>
-    </div>
-<?php endif; ?>
-
 <div class="download-section">
     <div class="software-info">
         <h3>Versions disponibles</h3>
         <p>Téléchargez la version souhaitée (y compris les anciennes versions).</p>
 
-        <?php if ($is_logged_in): ?>
+   
             <?php if (!empty($software_list)): ?>
                 <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
                     <thead>
@@ -75,12 +53,8 @@ if ($is_logged_in) {
                     </tbody>
                 </table>
             <?php else: ?>
-                <a href= "../files/downloads/artisan_nd_v1.1.rar" class="cta-button" disabled style="">Télécharger </a>
+                <a href= "../files/downloads/artisan_nd_v1.1.zip" class="cta-button" disabled style="">Télécharger </a>
             <?php endif; ?>
-        <?php else: ?>
-            <button class="cta-button" disabled style="opacity: 0.6; cursor: not-allowed;">Télécharger</button>
-            <p style="color: #8b4513; margin-top: 10px; font-size: 0.9em;">⚠️ Veuillez vous connecter ou créer un compte pour télécharger</p>
-        <?php endif; ?>
     </div>
     
     <div class="requirements">
