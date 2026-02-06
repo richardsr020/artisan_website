@@ -177,13 +177,13 @@ $subscription_active = $subscription_status['active'];
                     <div class="form-group">
                         <label for="client_id">Identifiant Client (ClientID) *</label>
                         <input type="text" id="client_id" name="client_id" class="form-control" required 
-                               placeholder="Ex: CLIENT_12345_ABC">
+                               placeholder="Ex: CLIENT_12345_ABC" autocomplete="off">
                         <div class="info-text">Identifiant unique du client (machine_id ou client_id)</div>
                     </div>
                     
                     <div class="form-group">
                         <label for="quota_units">Nombre d'Unités de Quota *</label>
-                        <input type="number" id="quota_units" name="quota_units" class="form-control" required 
+                        <input type="number" id="quota_units" name="quota_units" autocomplete="off" class="form-control" required 
                                min="1" placeholder="Ex: 100">
                         <div class="info-text">Nombre d'unités (pages) à recharger pour ce client</div>
                         <div class="info-text">Prix unitaire: <?php echo number_format(RECHARGE_UNIT_PRICE, 2); ?>$ / unité</div>
@@ -191,7 +191,7 @@ $subscription_active = $subscription_status['active'];
                     
                     <div class="form-group">
                         <label for="amount">Montant ($) *</label>
-                        <input type="number" id="amount" name="amount" class="form-control" required 
+                        <input type="number" id="amount" name="amount" autocomplete="off" class="form-control" required 
                                min="0" step="0.01" placeholder="Ex: 5000">
                     </div>
                     
